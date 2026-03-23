@@ -1,11 +1,11 @@
 import Foundation
-import Taskchampion
+import TaskchampionBridge
 import WidgetKit
 
 // swiftlint:disable:next type_body_length
 public class TaskchampionService {
     public static let shared = TaskchampionService()
-    private var replica: Replica?
+    private var replica: BridgeReplica?
     private var path: String?
     public var needToSync = false
     private var currentTask: _Concurrency.Task<Void, Error>?
@@ -37,9 +37,10 @@ public class TaskchampionService {
         if replica != nil, self.path != nil, self.path == path {
             return
         }
-        replica = Taskchampion.new_replica_on_disk(path, true, true)
-        if replica == nil {
-            throw TCError.genericError("Failed to create replica")
+        do {
+            replica = try BridgeReplica.open(path: path, createIfMissing: true)
+        } catch {
+            throw TCError.genericError("Failed to create replica: \(error.localizedDescription)")
         }
         self.path = path
     }
@@ -61,26 +62,26 @@ public class TaskchampionService {
     public func sync(syncType: SyncType, onSync: @escaping () -> Void = {}) async throws {
         currentTask?.cancel()
         currentTask = .init {
-            guard let replica else {
+            guard let replica = self.replica else {
                 throw TCError.genericError("Database not set")
             }
 
-            let syncService = getSyncServiceFromType(syncType)
+            let syncService = self.getSyncServiceFromType(syncType)
 
             do {
                 let synced = try await syncService.sync(replica: replica)
 
                 if synced {
-                    needToSync = false
+                    self.needToSync = false
                 } else {
-                    needToSync = true
+                    self.needToSync = true
                 }
                 WidgetCenter.shared.reloadAllTimelines()
                 onSync()
             } catch is CancellationError {
                 // do nothing: task was canceled before finishing
             } catch {
-                needToSync = true
+                self.needToSync = true
                 onSync()
             }
         }
@@ -90,27 +91,27 @@ public class TaskchampionService {
     public func sync(onSync: @escaping () -> Void = {}) async throws {
         currentTask?.cancel()
         currentTask = .init {
-            guard let replica else {
+            guard let replica = self.replica else {
                 throw TCError.genericError("Database not set")
             }
 
             let syncType: SyncType = FileService.shared.getSelectedSyncType() ?? .none
-            let syncService = getSyncServiceFromType(syncType)
+            let syncService = self.getSyncServiceFromType(syncType)
 
             do {
                 let synced = try await syncService.sync(replica: replica)
 
                 if synced {
-                    needToSync = false
+                    self.needToSync = false
                 } else {
-                    needToSync = true
+                    self.needToSync = true
                 }
                 WidgetCenter.shared.reloadAllTimelines()
                 onSync()
             } catch is CancellationError {
                 // do nothing: task was canceled before finishing
             } catch {
-                needToSync = true
+                self.needToSync = true
                 onSync()
             }
         }
@@ -132,16 +133,9 @@ public class TaskchampionService {
             return taskObjects
         }
 
-        let tasks = replica.all_tasks()
-        guard let tasks else {
-            throw TCError.genericError("Query was null")
-        }
+        let tasks = try replica.allTasks()
         taskObjects = tasks.compactMap {
-            let task = TCTask.taskFactory(from: $0, withFilter: filter)
-            if let task {
-                return task
-            }
-            return nil
+            TCTask.taskFactory(from: $0, withFilter: filter)
         }
 
         TasksHelper.sortTasksWithSortType(&taskObjects, sortType: sortType)
@@ -154,10 +148,7 @@ public class TaskchampionService {
             throw TCError.genericError("Database not set")
         }
 
-        let tasks = replica.pending_tasks()
-        guard let tasks else {
-            throw TCError.genericError("Query was null")
-        }
+        let tasks = try replica.pendingTasks()
         return tasks.map { TCTask(from: $0) }
     }
 
@@ -166,10 +157,7 @@ public class TaskchampionService {
         guard let replica else {
             throw TCError.genericError("Database not set")
         }
-        let task = replica.get_task(uuid)
-        guard let task else {
-            throw TCError.genericError("Task not found")
-        }
+        let task = try replica.getTask(uuid: uuid)
         return TCTask(from: task)
     }
 
@@ -217,34 +205,39 @@ public class TaskchampionService {
         guard let replica else {
             throw TCError.genericError("Database not set")
         }
-        let priority = (task.priority == TCTask.Priority.none || task.priority == nil) ? ""
-            .intoRustString() : task
-            .priority?.rawValue
-            .intoRustString()
-        let due = task.due?.timeIntervalSince1970.rounded()
-        let dueString = due != nil ? String(Int(due ?? 0)) : nil
 
-        var annotations: RustVec<Annotation>?
-        if let annotation = task.rustAnnotationFromObsidianNote {
-            annotations = RustVec<Annotation>()
-            annotations?.push(value: annotation)
-        }
+        let bridgePriority = (task.priority == .none || task.priority == nil) ? nil : task.priority?.toBridgePriority
+        let bridgeDue = task.due?.toBridgeTimestamp
+        let bridgeStatus = task.status.toBridgeStatus
+        let tagNames = task.tags?.compactMap { tag -> String? in
+            guard !tag.isSynthetic() else { return nil }
+            return tag.name
+        } ?? []
 
-        let task = replica.update_task(
-            task.uuid.intoRustString(),
-            task.description.intoRustString(),
-            dueString?.intoRustString(),
-            priority,
-            task.project?.intoRustString(),
-            task.status.rawValue.intoRustString(),
-            annotations,
-            task.rustVecOfTags
+        _ = try replica.updateTask(
+            uuid: task.uuid,
+            description: task.description,
+            status: bridgeStatus,
+            priority: bridgePriority,
+            due: bridgeDue,
+            project: task.project,
+            tags: tagNames
         )
-        if task == nil {
-            throw TCError.genericError("Failed to update task")
+
+        // Handle obsidian annotation separately
+        if let obsidianNote = task.obsidianNoteAnnotation {
+            // First, get the current task to check existing annotations
+            let currentTask = try replica.getTask(uuid: task.uuid)
+            // Remove any existing task-note annotation
+            for annotation in currentTask.annotations where annotation.description.starts(with: "task-note:") {
+                try replica.removeAnnotation(uuid: task.uuid, timestamp: annotation.timestamp)
+            }
+            // Add the new annotation
+            let timestamp = Int64(Date().timeIntervalSince1970.rounded())
+            try replica.addAnnotation(uuid: task.uuid, description: obsidianNote, timestamp: timestamp)
         }
 
-        _ = replica.sync_no_server() // rebuild the working set
+        try replica.rebuildWorkingSet()
 
         if skipSync {
             return
@@ -261,25 +254,31 @@ public class TaskchampionService {
         guard let replica else {
             throw TCError.genericError("Database not set")
         }
-        let priority = (task.priority == TCTask.Priority.none || task.priority == nil) ? "".intoRustString() : task
-            .priority?.rawValue
-            .intoRustString()
-        let due = task.due?.timeIntervalSince1970.rounded()
-        let dueString = due != nil ? String(Int(due ?? 0)) : nil
 
-        let task = replica.create_task(
-            task.uuid.intoRustString(),
-            task.description.intoRustString(),
-            dueString?.intoRustString(),
-            priority,
-            task.project?.intoRustString(),
-            task.rustVecOfTags
+        let bridgePriority = (task.priority == .none || task.priority == nil) ? nil : task.priority?.toBridgePriority
+        let bridgeDue = task.due?.toBridgeTimestamp
+        let bridgeStatus = task.status.toBridgeStatus
+        let tagNames = task.tags?.compactMap { tag -> String? in
+            guard !tag.isSynthetic() else { return nil }
+            return tag.name
+        } ?? []
+
+        _ = try replica.createTask(
+            description: task.description,
+            status: bridgeStatus,
+            priority: bridgePriority,
+            due: bridgeDue,
+            project: task.project,
+            tags: tagNames
         )
-        if task == nil {
-            throw TCError.genericError("Failed to create task")
+
+        // Handle obsidian annotation
+        if let obsidianNote = task.obsidianNoteAnnotation {
+            let timestamp = Int64(Date().timeIntervalSince1970.rounded())
+            try replica.addAnnotation(uuid: task.uuid, description: obsidianNote, timestamp: timestamp)
         }
 
-        _ = replica.sync_no_server() // rebuild the working set
+        try replica.rebuildWorkingSet()
 
         _Concurrency.Task.detached {
             try? await self.sync {
