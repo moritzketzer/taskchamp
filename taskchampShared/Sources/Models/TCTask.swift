@@ -50,24 +50,24 @@ public struct TCTask: Codable, Hashable {
     }
 
     @MainActor
-    public static func taskFactory(from rustTask: TaskRef, withFilter filter: TCFilter) -> TCTask? {
-        let prio = rustTask.get_priority().toString()
+    public static func taskFactory(from bridgeTask: BridgeTaskData, withFilter filter: TCFilter) -> TCTask? {
+        let prio = bridgeTask.priority?.toAppPriority ?? .none
         if filter.didSetPrio {
-            if prio != filter.priority.rawValue {
+            if prio != filter.priority {
                 return nil
             }
         }
 
-        let project = rustTask.get_project()?.toString() ?? ""
+        let project = bridgeTask.project ?? ""
         if filter.didSetProject {
             if project != filter.project {
                 return nil
             }
         }
 
-        let statusValue = rustTask.get_status().get_value().toString().lowercased()
+        let statusValue = bridgeTask.status.toAppStatus
         if filter.didSetStatus {
-            if statusValue != filter.status.rawValue {
+            if statusValue != filter.status {
                 return nil
             }
         }
@@ -75,40 +75,29 @@ public struct TCTask: Codable, Hashable {
         if filter.didSetTags {
             let tagsToInclude = filter.tagsToInclude
             let tagsToExclude = filter.tagsToExclude
-            let rustTags = rustTask.get_tags().map { $0.get_value().toString }
-            for tag in tagsToInclude ?? [] where !rustTags.contains(where: { $0() == tag.name }) {
+            let taskTags = bridgeTask.tags
+            for tag in tagsToInclude ?? [] where !taskTags.contains(tag.name) {
                 return nil
             }
-            for tag in tagsToExclude ?? [] where rustTags.contains(where: { $0() == tag.name }) {
+            for tag in tagsToExclude ?? [] where taskTags.contains(tag.name) {
                 return nil
             }
         }
 
-        return TCTask(from: rustTask)
+        return TCTask(from: bridgeTask)
     }
 
     @MainActor
-    public init(from rustTask: TaskRef) {
-        let uuid = rustTask.get_uuid().to_string().toString()
-        let description = rustTask.get_description().toString()
-        let status = rustTask.get_status().get_value().toString().lowercased()
-        let prio = rustTask.get_priority().toString()
-        let due = rustTask.get_due()?.toString()
-        let project = rustTask.get_project()?.toString()
-        let annotations = rustTask.get_annotations().map { $0.get_description().toString() }
-        let tags = rustTask.get_tags().map { TCTag.tagFactory(name: $0.get_value().toString()) }
+    public init(from bridgeTask: BridgeTaskData) {
+        self.uuid = bridgeTask.uuid
+        self.description = bridgeTask.description
+        self.status = bridgeTask.status.toAppStatus
+        self.priority = bridgeTask.priority?.toAppPriority ?? .none
+        self.due = bridgeTask.due.map { $0.toDate }
+        self.project = bridgeTask.project
 
-        // Initialize
-        self.uuid = uuid
-        self.description = description
-        self.status = Status(rawValue: status) ?? .pending
-        if !prio.isEmpty, let priority = Priority(rawValue: prio) {
-            self.priority = priority
-        }
-        if let due, let timeInterval = TimeInterval(due) {
-            self.due = Date(timeIntervalSince1970: timeInterval)
-        }
-        self.project = project
+        let annotations = bridgeTask.annotations.map { $0.description }
+        let tags = bridgeTask.tags.map { TCTag.tagFactory(name: $0) }
 
         // Look for obsidian note in annotations
         var obsidianNoteValue: String?
@@ -226,47 +215,6 @@ public struct TCTask: Codable, Hashable {
         return "task-note: \(note)"
     }
 
-    public var rustAnnotationFromObsidianNote: Annotation? {
-        guard let note = obsidianNoteAnnotation else {
-            return nil
-        }
-
-        let annotation = Taskchampion.create_annotation(
-            note,
-            String(Int(Date().timeIntervalSince1970.rounded()))
-        )
-        return annotation
-    }
-
-    public var rustTags: [Tag?]? {
-        guard let tags, !tags.isEmpty else {
-            return nil
-        }
-        return tags.compactMap { tag in
-            if tag.isSynthetic() {
-                return nil
-            }
-            let rustTag = tag.rustTag
-            if rustTag?.is_synthetic() ?? false {
-                return nil
-            }
-            return rustTag
-        }
-    }
-
-    public var rustVecOfTags: RustVec<Tag>? {
-        guard let rustTags else {
-            return nil
-        }
-        let rustVec = RustVec<Tag>()
-        for tag in rustTags {
-            if let tag = tag {
-                rustVec.push(value: tag)
-            }
-        }
-        return rustVec
-    }
-
     public var isCompleted: Bool {
         status == .completed
     }
@@ -292,6 +240,32 @@ public struct TCTask: Codable, Hashable {
 
     public var localDateShort: String {
         guard let due = due else {
+            return ""
+        }
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
+        dateFormatter.doesRelativeDateFormatting = true
+        return dateFormatter.string(from: due)
+    }
+
+    public var url: URL {
+        guard let url = URL(string: "taskchamp://task/\(uuid)") else {
+            fatalError("Failed to construct url.")
+        }
+
+        return url
+    }
+
+    public static var newTaskUrl: URL {
+        guard let url = URL(string: "taskchamp://task/new") else {
+            fatalError("Failed to construct url.")
+        }
+
+        return url
+    }
+}
+{
             return ""
         }
         let dateFormatter = DateFormatter()
