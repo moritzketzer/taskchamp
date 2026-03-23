@@ -6,7 +6,8 @@ import ProjectDescription
 
 let packageSettings = PackageSettings(
     productTypes: [
-        "MarkdownUI": .framework // default is .staticFramework
+        "MarkdownUI": .staticFramework,
+        "SoulverCore": .staticFramework
     ]
 )
 #endif

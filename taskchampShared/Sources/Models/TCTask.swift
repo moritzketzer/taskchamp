@@ -265,29 +265,3 @@ public struct TCTask: Codable, Hashable {
         return url
     }
 }
-{
-            return ""
-        }
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .none
-        dateFormatter.doesRelativeDateFormatting = true
-        return dateFormatter.string(from: due)
-    }
-
-    public var url: URL {
-        guard let url = URL(string: "taskchamp://task/\(uuid)") else {
-            fatalError("Failed to construct url.")
-        }
-
-        return url
-    }
-
-    public static var newTaskUrl: URL {
-        guard let url = URL(string: "taskchamp://task/new") else {
-            fatalError("Failed to construct url.")
-        }
-
-        return url
-    }
-}
