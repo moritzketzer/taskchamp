@@ -58,15 +58,13 @@ public class TCTag: Codable, Equatable {
         excludedFromFilters = []
     }
 
-    public var rustTag: Tag? {
-        return Taskchampion.create_tag(name)
-    }
-
     public func isSynthetic() -> Bool {
-        return rustTag?.is_synthetic() ?? false
+        name.hasPrefix("_")
     }
 
     public func isValid() -> Bool {
-        return rustTag != nil
+        guard !name.isEmpty else { return false }
+        let pattern = /^[a-zA-Z0-9._]+$/
+        return name.wholeMatch(of: pattern) != nil && !isSynthetic()
     }
 }
