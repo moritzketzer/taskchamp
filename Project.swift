@@ -12,7 +12,7 @@ let project = Project(
             destinations: .iOS,
             product: .app,
             bundleId: "com.mav.taskchamp",
-            deploymentTargets: .iOS("17.0"),
+            deploymentTargets: .iOS("26.0"),
             infoPlist: .extendingDefault(
                 with: [
                     "CFBundleName": "Taskchamp",
@@ -29,7 +29,8 @@ let project = Project(
                                 "NSUbiquitousContainerSupportedFolderLevels": "Any"
                             ]
                     ],
-                    "CFBundleShortVersionString": "3.2"
+                    "CFBundleShortVersionString": "3.2",
+                    "NSAlarmKitUsageDescription": "TaskChamp uses alarms to alert you about urgent tasks at their due time."
                 ]
             ),
             sources: ["taskchamp/Sources/**"],
