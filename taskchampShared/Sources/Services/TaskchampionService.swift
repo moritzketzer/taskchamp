@@ -263,7 +263,7 @@ public class TaskchampionService {
             return tag.name
         } ?? []
 
-        _ = try replica.createTask(
+        let created = try replica.createTask(
             description: task.description,
             status: bridgeStatus,
             priority: bridgePriority,
@@ -272,10 +272,10 @@ public class TaskchampionService {
             tags: tagNames
         )
 
-        // Handle obsidian annotation
+        // Handle obsidian annotation — use bridge-generated UUID
         if let obsidianNote = task.obsidianNoteAnnotation {
             let timestamp = Int64(Date().timeIntervalSince1970.rounded())
-            try replica.addAnnotation(uuid: task.uuid, description: obsidianNote, timestamp: timestamp)
+            try replica.addAnnotation(uuid: created.uuid, description: obsidianNote, timestamp: timestamp)
         }
 
         try replica.rebuildWorkingSet()
