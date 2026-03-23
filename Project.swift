@@ -107,7 +107,7 @@ let project = Project(
             sources: "taskchampShared/Sources/**",
             dependencies: [
                 .external(name: "SoulverCore"),
-                .external(name: "Taskchampion")
+                .external(name: "TaskchampionBridge")
             ]
         )
     ],

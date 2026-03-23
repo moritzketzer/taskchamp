@@ -18,8 +18,8 @@ let package = Package(
         Package.Dependency.package(url: "https://github.com/soulverteam/SoulverCore", from: "2.6.3"),
         Package.Dependency.package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
         Package.Dependency.package(
-            name: "Taskchampion",
-            path: "../task-champion-swift/taskchampion-swift/taskchampion-swift/"
+            name: "TaskchampionBridge",
+            path: "../bridge"
         )
     ]
 )
