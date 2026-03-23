@@ -20,10 +20,13 @@
         ];
 
         shellHook = ''
-          # Xcode toolchain (swift, xcodebuild) must be on PATH for Tuist
-          export PATH="/usr/bin:$PATH"
-          export DEVELOPER_DIR="$(xcode-select -p)"
-          echo "TaskChamp dev shell — tuist $(tuist version), rustc $(rustc --version | cut -d' ' -f2)"
+          # Tuist uses DEVELOPER_DIR + xcrun to find swift. Nix's stdenv sets
+          # DEVELOPER_DIR to the nix-store apple-sdk which doesn't have swift.
+          # Override to point at the real Xcode installation.
+          export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+          export SDKROOT="$DEVELOPER_DIR/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+          export PATH="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin:$DEVELOPER_DIR/usr/bin:/usr/bin:$PATH"
+          echo "TaskChamp dev shell — tuist $(tuist version 2>/dev/null || echo '?'), swift $(swift --version 2>&1 | head -1)"
         '';
       };
     };
