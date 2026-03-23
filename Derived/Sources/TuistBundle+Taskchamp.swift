@@ -16,7 +16,7 @@ extension Foundation.Bundle {
 }
 // MARK: - Objective-C Bundle Accessor
 @objc
-public class TaskchampResources: NSObject {
+public final class TaskchampResources: NSObject {
 @objc public class var bundle: Bundle {
     return .module
 }
