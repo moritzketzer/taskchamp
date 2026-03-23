@@ -1,5 +1,5 @@
 import Foundation
-import Taskchampion
+import TaskchampionBridge
 
 // swiftlint:disable:next type_body_length
 public struct TCTask: Codable, Hashable {

@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import Taskchampion
 
 @Model
 public class TCTag: Codable, Equatable {
