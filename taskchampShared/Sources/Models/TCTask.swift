@@ -279,6 +279,10 @@ public struct TCTask: Codable, Hashable {
         obsidianNote != nil
     }
 
+    public var hasAlarm: Bool {
+        tags?.contains(where: { $0.name == "alarm" }) ?? false
+    }
+
     public var localDate: String {
         guard let due = due else {
             return ""
